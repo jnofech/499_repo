@@ -140,29 +140,120 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True):
 	custom : bool
 		Toggles whether a preset is activated.
 		Default: True
+        
+    Returns:
+    --------
+    frequency : float
+        Same as input. It's returned for convenience
+        if you want to follow up with the 'disperser'
+        function.
+    power : array
+        2D array of spectrum (log(abs(power))
+        vs frequency) as a function of time.
+    f_min : float
+        Minimum and maximum values for frequency
+        in the 'power' array.
+    fmax : float
+        Minimum and maximum values for frequency
+        in the 'power' array.
+    tmax : float
+        Time elapsed for sampling the data.
     '''
 
     if preset==True:
-	frequency,Nchannel,rate = loadcustom(frequency)          # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
-	outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
+        frequency,Nchannel,rate = loadcustom(frequency)          # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
+    outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
 
     # Reads data file:
     spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
                                   rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin")
-	
+
 
     # PLOTTING: Spectrum (intensity vs frequency) vs Time
 
     dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
 
-    xmin=freq[0].value
-    xmax=freq[-1].value
+    power = np.log(np.abs(fftd))
+    fmin = freq[0].value
+    fmax = freq[-1].value
+    tmin = 0
+    tmax = dt * power.shape[0]
+    
+    
+    xmin=fmin
+    xmax=fmax
     ymin=0
-    ymax= dt * fftd.shape[0]
+    ymax= tmax
 
-    plt.imshow(np.log(np.abs(fftd)), extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
+    plt.imshow(power, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
     plt.xlabel("Frequency (MHz)")
     plt.ylabel("Time (s)")
     plt.title("Spectrum vs Time")
 
     plt.savefig('spec_vs_time_'+outputsuffix+'_MHz.png')
+    
+    return frequency,power,fmin,fmax,tmax
+
+
+def disperser(frequency,power,fmin,fmax,tmax,DM):
+    '''
+    Shifts the elapsed time of a plot of spectrum
+    vs time, as if it had passed through a plasma of 
+    dispersion measure 'DM'.
+    
+    Parameters:
+    -----------
+    frequency : float
+        Frequency of the sampled radio line,
+        in MHz.
+    power : array
+        2D array of spectrum (log(abs(power))
+        vs frequency) as a function of time.
+    f_min : float
+        Minimum and maximum values for frequency
+        in the 'power' array.
+    fmax : float
+        Minimum and maximum values for frequency
+        in the 'power' array.
+    tmax : float
+        Time elapsed for sampling the data, without
+        DM taken into account.
+    dmax : float
+        Dispersion measure of the hypothetical
+        cloud of gas, in CGS units (cm^-2).
+    
+    Returns:
+    --------
+    tau : float
+	The time delay from passing the signal
+	through a cloud of dispersion measure DM.
+    '''
+    
+    outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
+
+    q_e = 1.602e-19     # Elementary charge, in C
+    c_l = 3.0e10        # Speed of light, in cm/s
+    m_e = 9.109e-28     # Mass of electron, in g
+    
+    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frequency*1e6)**2) * DM    # Time delayed by the dispersion measure DM
+                                                                  #(?) Does the first L/c_l term get ignored?
+    
+    
+    # PLOTTING: Spectrum (intensity vs frequency) vs Time    
+    
+    xmin=fmin
+    xmax=fmax
+    ymin=0
+    ymax= tmax + tau
+
+    plt.imshow(power, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
+    plt.xlabel("Frequency (MHz)")
+    plt.ylabel("Time (s)")
+    plt.title("Spectrum vs Time")
+    
+    print tau
+
+    plt.savefig('spec_vs_time_'+outputsuffix+'_MHz_DM_is_'+str(DM)+'.png')
+    
+    return tau
+
