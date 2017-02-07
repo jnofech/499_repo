@@ -224,19 +224,39 @@ def disperser(frequency,power,fmin,fmax,tmax,DM):
     
     Returns:
     --------
-    tau : float
-	The time delay from passing the signal
-	through a cloud of dispersion measure DM.
+    tau : array
+        The time delay from passing the signal
+        through a cloud of dispersion measure DM,
+        corresponding with frequency range.
+
     '''
     
     outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
 
-    q_e = 1.602e-19     # Elementary charge, in C
+    q_e = 4.84e-10     # Elementary charge, in esu
     c_l = 3.0e10        # Speed of light, in cm/s
     m_e = 9.109e-28     # Mass of electron, in g
     
-    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frequency*1e6)**2) * DM    # Time delayed by the dispersion measure DM
-                                                                  #(?) Does the first L/c_l term get ignored?
+    frange = np.linspace(fmin,fmax,power.shape[1])    # Array containing the range of frequencies.
+    tstep = tmax / power.shape[0]                     # Time per "step" in array, in seconds
+    
+    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frange*1e6)**2) * DM    # Time delayed by the dispersion measure DM
+                                                                     #(?) Does the first L/c_l term get ignored?
+    # tau = np.zeros(power.shape[1]) + np.random.rand(power.shape[1])*0.5   # Testing the code for larger 'tau'.
+    
+    
+    # Expanding Array by As Large as Necessary
+    
+    n_rows = np.int(np.max(tau) / tstep)        # Number of extra rows the array needs
+    blankspace = np.zeros(power.shape[1]*n_rows).reshape(n_rows,power.shape[1])
+    power = np.vstack([power,blankspace])
+    
+    # SHIFTING the Array by Tau
+    tau_step = tau / tstep              # tau, in units of steps
+    tau_step = tau_step.astype(int)
+    
+    for i in range(0,power.shape[1]):
+        power[:,i] = np.roll(power[:,i],tau_step[i])
     
     
     # PLOTTING: Spectrum (intensity vs frequency) vs Time    
@@ -244,16 +264,13 @@ def disperser(frequency,power,fmin,fmax,tmax,DM):
     xmin=fmin
     xmax=fmax
     ymin=0
-    ymax= tmax + tau
+    ymax= tmax + np.max(tau)
 
     plt.imshow(power, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
     plt.xlabel("Frequency (MHz)")
     plt.ylabel("Time (s)")
     plt.title("Spectrum vs Time")
-    
-    print tau
 
     plt.savefig('spec_vs_time_'+outputsuffix+'_MHz_DM_is_'+str(DM)+'.png')
     
     return tau
-
