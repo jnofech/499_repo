@@ -218,7 +218,7 @@ def disperser(frequency,power,fmin,fmax,tmax,DM):
     tmax : float
         Time elapsed for sampling the data, without
         DM taken into account.
-    dmax : float
+    DM : float
         Dispersion measure of the hypothetical
         cloud of gas, in CGS units (cm^-2).
     
