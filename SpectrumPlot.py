@@ -125,21 +125,21 @@ def loadcustom(frequency):
 
 def specplot(frequency, Nchannel=5000, rate=3, preset=True):
     '''
-	Plots spectrum versus time from a given data file, then
-	saves it.
+    Plots spectrum versus time from a given data file, then
+    saves it.
 
-	Parameters:
-	-----------
-	frequency : float
-		Frequency of sampled radio line, in MHz.
-	Nchannel : int
-		Number of samples.	
-	rate : float
-		Sampling rate, in MHz (millions of
-		samples per second).
-	custom : bool
-		Toggles whether a preset is activated.
-		Default: True
+    Parameters:
+    -----------
+    frequency : float
+        Frequency of sampled radio line, in MHz.
+    Nchannel : int
+        Number of samples.	
+    rate : float
+        Sampling rate, in MHz (millions of
+        samples per second).
+    custom : bool
+        Toggles whether a preset is activated.
+        Default: True
         
     Returns:
     --------
@@ -150,6 +150,9 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True):
     power : array
         2D array of spectrum (log(abs(power))
         vs frequency) as a function of time.
+    fftd : array
+        2D array of _complex_ power vs frequency,
+        as a function of time.
     f_min : float
         Minimum and maximum values for frequency
         in the 'power' array.
@@ -192,7 +195,7 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True):
 
     plt.savefig('spec_vs_time_'+outputsuffix+'_MHz.png')
     
-    return frequency,power,fmin,fmax,tmax
+    return frequency,power,fftd,fmin,fmax,tmax
 
 
 def disperser(frequency,power,fmin,fmax,tmax,DM):
@@ -240,7 +243,8 @@ def disperser(frequency,power,fmin,fmax,tmax,DM):
     frange = np.linspace(fmin,fmax,power.shape[1])    # Array containing the range of frequencies.
     tstep = tmax / power.shape[0]                     # Time per "step" in array, in seconds
     
-    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frange*1e6)**2) * DM    # Time delayed by the dispersion measure DM
+    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frange*1e6)**2) * DM * 3.086e16
+                                                                     # Time delayed by the dispersion measure DM
                                                                      #(?) Does the first L/c_l term get ignored?
     # tau = np.zeros(power.shape[1]) + np.random.rand(power.shape[1])*0.5   # Testing the code for larger 'tau'.
     
@@ -274,3 +278,46 @@ def disperser(frequency,power,fmin,fmax,tmax,DM):
     plt.savefig('spec_vs_time_'+outputsuffix+'_MHz_DM_is_'+str(DM)+'.png')
     
     return tau
+
+
+def addnoise(fftd,scale=1):
+    '''
+    Takes array of _complex_ power vs
+    frequency, then adds random noise with a
+    standard deviation of 1*scale to it.
+
+    Parameters:
+    -----------
+    fftd : array
+        2D array of _complex_ power vs frequency,
+        as a function of time.
+    scale : float
+        Multiplier for standard deviation of noise.
+        e.g. scale==2 will cause noise to have a 
+        standard deviation of 2.
+        
+    Returns:
+    --------
+    power_n : array
+        2D array of spectrum (log(abs(power))
+        vs frequency) as a function of time,
+        WITH noise applied.
+    fftd_n : array
+        2D array of _complex_ power vs frequency,
+        as a function of time, WITH noise applied.
+    noise : array
+        2D array of _complex_ noise, added to fftd,
+        should you feel like using it for some reason.
+    '''
+
+    noise_x = np.random.randn(fftd.shape[0],fftd.shape[1])    
+    noise_y = np.random.randn(fftd.shape[0],fftd.shape[1])
+
+    noise = scale*(noise_x + noise_y*1j)    # At the moment, the noise can be positive or negative;
+                                            # as opposed to ranging from 0 to x. Is this okay?
+    
+    fftd_n = fftd + noise
+    
+    power_n = np.log(np.abs(fftd_n))
+    
+    return power_n, fftd_n, noise
