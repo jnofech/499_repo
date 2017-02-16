@@ -3,44 +3,63 @@ import astropy.units as u
 import subprocess
 from tempfile import TemporaryFile		# Enables file-saving/loading.
 import matplotlib.pyplot as plt
+import scipy.linalg as sla
 
 # 1.29.17 - Manipulating and displaying USB radio antenna data. 
 
 print('"SpectrumPlot.py" \n \nAvailable functions: \n  readradio - Reads the data from "sampler"\'s output.\n  savecustom - Saves a custom preset for frequency, sample frequency, etc.\n  loadcustom - Loads a custom preset.\n  specplot - Plots the spectrum vs time of a given frequency\'s data file.')
 
 
-def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate = 3*u.MHz, timesamples=False):
+def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate = 3*u.MHz, timesamples=False,\
+             mode='FFT'):
     '''
-	Reads from a saved data file.
-
-	
-	Parameters:
-	-----------
-	fname : str
-		Name of data file. Must include '.bin'
-		suffix.
-	Nchannel : int
-		Number of samples.
-	frequency : float
-		Frequency of sampled radio line, in MHz.
-	rate : float
-		Sampling rate, in MHz (millions of
-		samples per second).
-	timesamples : bool
-		Toggles whether to return raw data.
-		FALSE (disabled) by default.
-
-	
-	Returns:
-	--------
-	spec : array
-		1D array of average relative intensity.
-	freq : array
-		1D array of corresponding frequency in MHz.
-	fftd : array
-		2D array of corresponding spectrum versus time.	
-	time : array
-		??????
+    Reads the recorded data files of a certain frequency, and then outputs
+    arrays of time-averaged 'spectrum' (via FFT or KLT), the spectrum as a function
+    of time, and the corresponding frequencies and time.
+    
+    Parameters:
+    -----------
+    fname : str
+        Name of the data file to be read, including
+        '.bin' suffix.
+    Nchannel : int
+        Number of samples.
+    frequency : float
+        Frequency of sampled radio line, in MHz.
+    rate : float
+        Sampling rate, in MHz (millions of
+        samples per second).
+    timesamples : bool
+        Returns the raw array if True. False by
+        default.
+    mode : str ('FFT' or 'KLT')
+        Analyzes data using fast fourier transform or
+        Karhunen-Loeve transform.
+        Default: 'FFT'
+        
+    Returns:
+    --------
+    if mode=='FFT':
+        spec : array
+            1D array of time-averaged spectrum
+            vs frequency.
+        freq : array
+            1D array of corresponding frequencies to
+            spec and fftd.
+        fftd : array
+            2D array of _complex_ power(?) vs frequency,
+            as a function of time.
+            OR
+            2D array of eigenvalues vs eigenvalue
+            number, as a function of time.
+        time : array
+            1D array of corresponding time.
+    elif mode=='KLT':
+        eigval : array
+            2D array of eigenvalues vs eigenvalue
+            number, as a function of time.
+        time : array
+            1D array of corresponding time.
     '''
     d = np.fromfile(fname,dtype=np.uint8)
     d = d.astype(np.float)
@@ -49,20 +68,43 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
     if timesamples:
         return(d)
     d.shape = (d.size/Nchannel,Nchannel) # Navgs by Nchannels
-    fftd = np.fft.fft(d,axis=1)           # (?) Spectrum?
-    spec = np.mean(np.abs(fftd),axis=0)   # (?) Time-averaged spectrum vs frequency?
-    freq = np.fft.fftfreq(Nchannel)*rate+frequency
-    print freq.shape
-    time = (np.arange(d.size/Nchannel)/rate)
     
-    freq = np.roll(freq, np.size(freq)/2)         # Array of frequencies, fixed to range from lowest to highest.
-    spec = np.roll(spec, np.size(spec)/2)         # Array of corresponding average spectrum, fixed the same way.
-    fftd = np.roll(fftd, np.size(freq)/2, axis=1) # Array of corresponding spectrum AT DIFFERENT TIMES, also fixed.
-    return(spec,freq,fftd,time)
-    print(fftd.shape)    
 
-    return(spec,freq,fftd,time)
+    if mode=='fft' or mode=='FFT':
+        # Fast Fourier Transform
+        fftd = np.fft.fft(d,axis=1)           # (?) Spectrum?
+        spec = np.mean(np.abs(fftd),axis=0)   # (?) Time-averaged spectrum vs frequency?
+        
+        freq = np.fft.fftfreq(Nchannel)*rate+frequency
+        print d.size
+        time = (np.arange(d.size/Nchannel)/rate)
 
+        freq = np.roll(freq, np.size(freq)/2)         # Array of frequencies, fixed to range from lowest to highest.
+        spec = np.roll(spec, np.size(spec)/2)         # Array of corresponding average spectrum, fixed the same way.
+        fftd = np.roll(fftd, np.size(freq)/2, axis=1) # Array of corresponding spectrum AT DIFFERENT TIMES, also fixed.
+        
+        return spec,freq,fftd,time
+        
+    elif mode=='klt' or mode=='KLT':
+        # KL Transform
+        ffty = np.fft.fft(d, axis=0)
+        acorfft = np.fft.ifft(ffty * np.conj(ffty), axis=0)
+        # Drop the imaginary component.
+        acorfft = acorfft.real
+        # Magic of the KL Transform is just to calculate the eigenvalues of the Toeplitz matrix.
+        eigval = np.copy(acorfft)*0             # Creates empty array of same size.
+
+        for i in range(0,toeplitz_matrix.shape[1]):
+            toeplitz_matrix = sla.toeplitz(acorfft[i])
+            eigval[i], dummy = np.linalg.eigh(toeplitz_matrix)  # Don't bother with eigenvectors.
+
+        time = (np.arange(d.size/Nchannel)/rate)
+        
+        return eigval,time
+    
+    else:
+        print "ERROR : 'mode' must equal FFT' or 'KLT'."
+        return
 
 
 def savecustom(frequency, Nchannel, rate):
@@ -123,9 +165,9 @@ def loadcustom(frequency):
 #            custom[np.where(custom_index=='rate')[0][0]]    # Keep this here in case we want to add more values
                                                             # to the 'custom' files or call them separately.
 
-def specplot(frequency, Nchannel=5000, rate=3, preset=True):
+def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
     '''
-    Plots spectrum versus time from a given data file, then
+    Plots spectrum or eigenvalues versus time from a given data file, then
     saves it.
 
     Parameters:
@@ -133,70 +175,113 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True):
     frequency : float
         Frequency of sampled radio line, in MHz.
     Nchannel : int
-        Number of samples.	
+        Number of samples.
     rate : float
         Sampling rate, in MHz (millions of
         samples per second).
-    custom : bool
+    preset : bool
         Toggles whether a preset is activated.
         Default: True
+    mode : str ('FFT' or 'KLT')
+        Analyzes data using fast fourier transform or
+        Karhunen-Loeve transform.
         
     Returns:
     --------
-    frequency : float
-        Same as input. It's returned for convenience
-        if you want to follow up with the 'disperser'
-        function.
-    power : array
-        2D array of spectrum (log(abs(power))
-        vs frequency) as a function of time.
-    fftd : array
-        2D array of _complex_ power vs frequency,
-        as a function of time.
-    f_min : float
-        Minimum and maximum values for frequency
-        in the 'power' array.
-    fmax : float
-        Minimum and maximum values for frequency
-        in the 'power' array.
-    tmax : float
-        Time elapsed for sampling the data.
+    if mode=='FFT':
+        frequency : float
+            Same as input. It's returned for convenience
+            if you want to follow up with the 'disperser'
+            function.
+        power : array
+            2D array of spectrum (log(abs(power))
+            vs frequency) as a function of time.
+        fftd : array
+            2D array of _complex_ power vs frequency,
+            as a function of time.
+        f_min : float
+            Minimum and maximum values for frequency
+            in the 'power' array.
+        fmax : float
+            Minimum and maximum values for frequency
+            in the 'power' array.
+        tmax : float
+            Time elapsed for sampling the data.
+    elif mode=='KLT':
+        eigval : array
+            2D array of eigenvalues vs. eigenvalue
+            number as a function of time.
+        tmax : float
+            Time elapsed for sampling the data.
     '''
 
     if preset==True:
         frequency,Nchannel,rate = loadcustom(frequency)          # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
     outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
 
-    # Reads data file:
-    spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
-                                  rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin")
+
+    if mode=='fft' or mode=='FFT':
+        
+        # Reads data file:
+        spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
+                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",mode='FFT')
+        
+        # PLOTTING: Spectrum (intensity vs frequency) vs Time
+
+        dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
+
+        power = np.log(np.abs(fftd))
+        fmin = freq[0].value
+        fmax = freq[-1].value
+        tmin = 0
+        tmax = dt * power.shape[0]
 
 
-    # PLOTTING: Spectrum (intensity vs frequency) vs Time
+        xmin=fmin
+        xmax=fmax
+        ymin=0
+        ymax= tmax
 
-    dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
+        plt.imshow(power, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
+        plt.xlabel("Frequency (MHz)")
+        plt.ylabel("Time (s)")
+        plt.title("Spectrum vs Time")
 
-    power = np.log(np.abs(fftd))
-    fmin = freq[0].value
-    fmax = freq[-1].value
-    tmin = 0
-    tmax = dt * power.shape[0]
+        plt.savefig('spec_vs_time_'+outputsuffix+'_MHz.png')
+
+        return frequency,power,fftd,fmin,fmax,tmax
+    elif mode=='klt' or mode=='KLT':
+        
+        # Reads data file:
+        eigval, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
+                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",mode='KLT')
+        
+        # PLOTTING: Eigenvalues (eigval vs eigval number) vs Time
+
+        dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
+
+        eigval = eigval     #(?) Reverses the order of the eigenvalues, so that they descend rather than ascend.
+        
+        tmin = 0
+        tmax = dt * eigval.shape[0]
+
+        ymin=0
+        ymax= tmax
+
+        print eigval
+        print eigval.shape
+        plt.imshow(eigval, extent = [0,eigval.shape[0],ymin,ymax], aspect='auto', origin='lower')
+        plt.xlabel("Eigenvalue Number")
+        plt.ylabel("Time (s)")
+        plt.title("Eigenvalues vs Time")
+
+        plt.savefig('eig_vs_time_'+outputsuffix+'_MHz.png')
+        
+        return eigval, tmax
+    else:
+        print "ERROR : 'mode' must equal FFT' or 'KLT'."
+        return
     
-    
-    xmin=fmin
-    xmax=fmax
-    ymin=0
-    ymax= tmax
-
-    plt.imshow(power, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
-    plt.xlabel("Frequency (MHz)")
-    plt.ylabel("Time (s)")
-    plt.title("Spectrum vs Time")
-
-    plt.savefig('spec_vs_time_'+outputsuffix+'_MHz.png')
-    
-    return frequency,power,fftd,fmin,fmax,tmax
-
 
 def disperser(frequency,power,fmin,fmax,tmax,DM):
     '''
