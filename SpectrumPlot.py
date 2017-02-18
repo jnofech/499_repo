@@ -86,6 +86,10 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         return spec,freq,fftd,time
         
     elif mode=='klt' or mode=='KLT':
+        folds = 10       # (!) Change this manually if you want to run it faster or slower. Recommended: 5.
+        
+        # Let's reshape the signal into  
+        d.shape = (d.shape[0]*folds, d.shape[1]/folds)
         # KL Transform
         ffty = np.fft.fft(d, axis=0)
         acorfft = np.fft.ifft(ffty * np.conj(ffty), axis=0)
@@ -93,8 +97,9 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         acorfft = acorfft.real
         # Magic of the KL Transform is just to calculate the eigenvalues of the Toeplitz matrix.
         eigval = np.copy(acorfft)*0             # Creates empty array of same size.
+        
 
-        for i in range(0,toeplitz_matrix.shape[1]):
+        for i in range(0,acorfft.shape[1]):
             toeplitz_matrix = sla.toeplitz(acorfft[i])
             eigval[i], dummy = np.linalg.eigh(toeplitz_matrix)  # Don't bother with eigenvectors.
 
@@ -105,7 +110,6 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
     else:
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
         return
-
 
 def savecustom(frequency, Nchannel, rate):
     # When saving, all values must be UNITLESS. Units will be applied in other functions.
@@ -281,6 +285,8 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
     else:
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
         return
+    
+
     
 
 def disperser(frequency,power,fmin,fmax,tmax,DM):
