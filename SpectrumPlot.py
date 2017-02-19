@@ -7,7 +7,7 @@ import scipy.linalg as sla
 
 # 1.29.17 - Manipulating and displaying USB radio antenna data. 
 
-print('"SpectrumPlot.py" \n \nAvailable functions: \n  readradio - Reads the data from "sampler"\'s output.\n  savecustom - Saves a custom preset for frequency, sample frequency, etc.\n  loadcustom - Loads a custom preset.\n  specplot - Plots the spectrum vs time of a given frequency\'s data file.')
+print('"SpectrumPlot.py" \n \nAvailable functions: \n  readradio - Reads the data from "sampler"\'s output.\n  savecustom - Saves a custom preset for frequency, sample frequency, etc.\n  loadcustom - Loads a custom preset.\n  specplot - Plots the spectrum vs time of a given frequency\'s data file.\n  disperser - Add description here. \n  addnoise - Add description here. \n')
 
 
 def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate = 3*u.MHz, timesamples=False,\
@@ -87,6 +87,8 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         
     elif mode=='klt' or mode=='KLT':
         folds = 10       # (!) Change this manually if you want to run it faster or slower. Recommended: 5.
+        step = 10         # (!) Change this manually if you want to run it faster, at the cost of imshow resolution.
+                         #        Default: 1.
         
         # Let's reshape the signal into  
         d.shape = (d.shape[0]*folds, d.shape[1]/folds)
@@ -96,11 +98,13 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         # Drop the imaginary component.
         acorfft = acorfft.real
         # Magic of the KL Transform is just to calculate the eigenvalues of the Toeplitz matrix.
-        eigval = np.copy(acorfft)*0             # Creates empty array of same size.
+        print acorfft.size
+        print acorfft.shape
+        eigval = np.zeros(acorfft.size/step).reshape(acorfft.shape[0]/step,acorfft.shape[1]) # Creates empty array of same size.
         
-
-        for i in range(0,acorfft.shape[1]):
+        for i in range(0,acorfft.shape[0]/step):
             toeplitz_matrix = sla.toeplitz(acorfft[i])
+            print i
             eigval[i], dummy = np.linalg.eigh(toeplitz_matrix)  # Don't bother with eigenvectors.
 
         time = (np.arange(d.size/Nchannel)/rate)
@@ -110,6 +114,7 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
     else:
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
         return
+
 
 def savecustom(frequency, Nchannel, rate):
     # When saving, all values must be UNITLESS. Units will be applied in other functions.
@@ -264,7 +269,7 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
 
         dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
 
-        eigval = eigval     #(?) Reverses the order of the eigenvalues, so that they descend rather than ascend.
+        eigval = eigval[:,::-1]     #(?) Reverses the order of the eigenvalues, so that they descend rather than ascend.
         
         tmin = 0
         tmax = dt * eigval.shape[0]
@@ -272,20 +277,23 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
         ymin=0
         ymax= tmax
 
+    
         print eigval
         print eigval.shape
-        plt.imshow(eigval, extent = [0,eigval.shape[0],ymin,ymax], aspect='auto', origin='lower')
+        vmax = np.average(np.abs(eigval))*10     # Maximum value that will be registered on the color bar.
+        
+        plt.imshow(eigval, extent = [0,eigval.shape[1],ymin,ymax], vmin=-1*vmax, vmax=vmax, aspect='auto', origin='lower')
         plt.xlabel("Eigenvalue Number")
         plt.ylabel("Time (s)")
         plt.title("Eigenvalues vs Time")
+        plt.colorbar()
 
         plt.savefig('eig_vs_time_'+outputsuffix+'_MHz.png')
         
         return eigval, tmax
     else:
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
-        return
-    
+        return    
 
     
 
