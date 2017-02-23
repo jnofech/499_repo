@@ -30,8 +30,8 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         Sampling rate, in MHz (millions of
         samples per second).
     timesamples : bool
-        Returns the raw array if True. False by
-        default.
+        Returns the raw array if True.
+        Default: True
     mode : str ('FFT' or 'KLT')
         Analyzes data using fast fourier transform or
         Karhunen-Loeve transform.
@@ -47,7 +47,7 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
             1D array of corresponding frequencies to
             spec and fftd.
         fftd : array
-            2D array of _complex_ power(?) vs frequency,
+            2D array of _complex_ power vs frequency,
             as a function of time.
             OR
             2D array of eigenvalues vs eigenvalue
@@ -58,12 +58,17 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         eigval : array
             2D array of eigenvalues vs eigenvalue
             number, as a function of time.
+        eigval_n : array
+            2D array of eigenvalues vs eigenvalue
+            number, as a function of time, for
+            NOISE (as opposed to measured signal).
         time : array
             1D array of corresponding time.
     '''
     d = np.fromfile(fname,dtype=np.uint8)
     d = d.astype(np.float)
     d -= 127
+    print d.shape
     d = d[0::2]+d[1::2]*1j
     if timesamples:
         return(d)
@@ -72,8 +77,9 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
 
     if mode=='fft' or mode=='FFT':
         # Fast Fourier Transform
-        fftd = np.fft.fft(d,axis=1)           # (?) Spectrum?
-        spec = np.mean(np.abs(fftd),axis=0)   # (?) Time-averaged spectrum vs frequency?
+        fftd = np.fft.fft(d,axis=1)           # Spectrum
+        spec = np.mean(np.abs(fftd),axis=0)   # Time-averaged spectrum vs frequency
+        
         
         freq = np.fft.fftfreq(Nchannel)*rate+frequency
         print d.size
@@ -87,12 +93,15 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         
     elif mode=='klt' or mode=='KLT':
         folds = 10       # (!) Change this manually if you want to run it faster or slower. Recommended: 5.
-        step = 10         # (!) Change this manually if you want to run it faster, at the cost of imshow resolution.
+        step = 10        # (!) Change this manually if you want to run it faster, at the cost of imshow resolution.
                          #        Default: 1.
+        scale = 1        # (!) Affects the rms of the noise. Leave at 1 unless otherwise indicated.
         
         # Let's reshape the signal into  
         d.shape = (d.shape[0]*folds, d.shape[1]/folds)
-        # KL Transform
+        
+        
+        # KL Transform: SIGNAL
         ffty = np.fft.fft(d, axis=0)
         acorfft = np.fft.ifft(ffty * np.conj(ffty), axis=0)
         # Drop the imaginary component.
@@ -100,74 +109,54 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         # Magic of the KL Transform is just to calculate the eigenvalues of the Toeplitz matrix.
         print acorfft.size
         print acorfft.shape
-        eigval = np.zeros(acorfft.size/step).reshape(acorfft.shape[0]/step,acorfft.shape[1]) # Creates empty array of same size.
+        eigval = np.zeros(acorfft.size/step).reshape(acorfft.shape[0]/step,acorfft.shape[1]) 
+                 # Creates empty array of same size as acorfft, but with shape altered by number of stats.
         
-        for i in range(0,acorfft.shape[0]/step):
+        print 'acorfft.shape ='+str(acorfft.shape)
+        for i in range(0,acorfft.shape[0],step):
             toeplitz_matrix = sla.toeplitz(acorfft[i])
-            print i
-            eigval[i], dummy = np.linalg.eigh(toeplitz_matrix)  # Don't bother with eigenvectors.
+            #print i
+            eigval[i/step], dummy = np.linalg.eigh(toeplitz_matrix)  # Don't bother with eigenvectors.
 
         time = (np.arange(d.size/Nchannel)/rate)
         
-        return eigval,time
+        # KL Transform: NOISE
+        eigval_n = addnoise_KLT(d,eigval,step,scale)
+        
+        return eigval,eigval_n,time
+        #return eigval,time
     
     else:
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
         return
 
-
 def savecustom(frequency, Nchannel, rate):
     # When saving, all values must be UNITLESS. Units will be applied in other functions.
-    '''
-	When saving, all values must be UNITLESS. Presets are saved according
-		to frequency alone; i.e. you can not have multiple presets
-		for the same frequency.
-
-
-	Parameters:
-	-----------
-	frequency : float
-		Frequency of sampled radio line, in MHz.
-	Nchannel : int
-		Number of samples.	
-	rate : float
-		Sampling rate, in MHz (millions of
-		samples per second).
-    '''
     
-    custom_index=['frequency','Nchannel','rate']     	# Frequency of radio signal, number of samples, sampling rate.
+    custom_index=['frequency','Nchannel','rate']     # Frequency of radio signal, number of samples, sampling rate.
     custom = [frequency, int(Nchannel), rate]
     
-    outputsuffix = str(frequency).replace(".","_")     	# e.g. if freq = 96.5, then outputsuffix = '96_5'.
-    outfile = "radioline_"+outputsuffix+".bin"
-
-    f = file(str(outfile)+".bin","wb")			# Saves the following into 'filename.bin'.
-    np.save(f,custom)					# Saves array1.
-    np.save(f,custom_index)				# Saves array2.
-    f.close()						# No more saving; back to regular code.
+    outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
+    outfile = "config_"+outputsuffix+".bin"
+    print outfile
+    f = file(str(outfile),"wb")                  # Saves the following into 'filename.bin'.
+    np.save(f,custom)                      # Saves array1.
+    np.save(f,custom_index)                # Saves array2.
+    f.close()                                    # No more saving; back to regular code.
     
 def loadcustom(frequency):
     # All output will be UNITLESS. Units will be applied in other functions.
-    '''
-	When loading, all values will be UNITLESS.
-
-
-	Parameters:
-	-----------
-	frequency : float
-    '''
-
 
     outputsuffix = str(frequency).replace(".","_")     # e.g. if freq = 96.5, then outputsuffix = '96_5'.
-    outfile = "radioline_"+outputsuffix+".bin"
+    outfile = "config_"+outputsuffix+".bin"
 
-    f = file(str(outfile)+".bin","rb")			# Loads 'filename.bin'.
-    custom = np.load(f)					# Loads the old 'array1' into ARRAY1.
-    custom_index = np.load(f)				# Loads the old 'array2' into ARRAY2. Note that this is 
-                                           		#     based on the order in which the arrays were saved! 
-                                           		#     You don't get to specify which array to load
-                                            		#     based on its name.
-    f.close()						# No more loading; back to regular code.
+    f = file(str(outfile),"rb")                 # Loads 'filename.bin'.
+    custom = np.load(f)                         # Loads the old 'array1' into ARRAY1.
+    custom_index = np.load(f)               # Loads the old 'array2' into ARRAY2. Note that this is 
+                                            #     based on the order in which the arrays were saved! 
+                                            #     You don't get to specify which array to load
+                                            #     based on its name.
+    f.close()                                   # No more loading; back to regular code.
 
     return custom[0],int(custom[1]),custom[2]
 #    return custom[np.where(custom_index=='frequency')[0][0]], custom[np.where(custom_index=='Nchannel')[0][0]], \
@@ -183,6 +172,8 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
     -----------
     frequency : float
         Frequency of sampled radio line, in MHz.
+        A frequency of 0 MHz will be interpreted as
+        blank noise.
     Nchannel : int
         Number of samples.
     rate : float
@@ -191,6 +182,7 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
     preset : bool
         Toggles whether a preset is activated.
         Default: True
+        (!) False is currently unsupported.
     mode : str ('FFT' or 'KLT')
         Analyzes data using fast fourier transform or
         Karhunen-Loeve transform.
@@ -220,6 +212,9 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
         eigval : array
             2D array of eigenvalues vs. eigenvalue
             number as a function of time.
+        eigval_n : array
+            Same as eigval, but for noise instead
+            of signal.
         tmax : float
             Time elapsed for sampling the data.
     '''
@@ -233,13 +228,18 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
         
         # Reads data file:
         spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
-                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",mode='FFT')
+                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
+                                      mode='FFT')
+        # Generates noise array:
+        fftd_n, noise, power_n = addnoise(fftd,1)
+        
         
         # PLOTTING: Spectrum (intensity vs frequency) vs Time
 
         dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
 
         power = np.log(np.abs(fftd))
+        noisepower = np.log(np.abs(noise))
         fmin = freq[0].value
         fmax = freq[-1].value
         tmin = 0
@@ -251,50 +251,84 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT'):
         ymin=0
         ymax= tmax
 
+        # Draw Spectrum vs. Time for SIGNAL
         plt.imshow(power, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
+        plt.colorbar()
         plt.xlabel("Frequency (MHz)")
         plt.ylabel("Time (s)")
-        plt.title("Spectrum vs Time")
+        plt.title("Spectrum vs Time, for "+str(frequency)+" MHz")
 
         plt.savefig('spec_vs_time_'+outputsuffix+'_MHz.png')
+        plt.clf()
+        
+        # Draw Spectrum vs. Time for NOISE
+        plt.imshow(noisepower, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
+        plt.colorbar()
+        plt.xlabel("Frequency (MHz)")
+        plt.ylabel("Time (s)")
+        plt.title("Spectrum vs Time ("+str(frequency)+" MHz), for NOISE")
 
+        plt.savefig('spec_vs_time_'+outputsuffix+'_MHz_n.png')
+        plt.clf()
         return frequency,power,fftd,fmin,fmax,tmax
     elif mode=='klt' or mode=='KLT':
+        # (!) Change these parameters.
+        Nmax = 100       # Number of eigenvalues to be displayed on x-axis.
         
         # Reads data file:
-        eigval, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
-                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",mode='KLT')
+        eigval, eigval_n, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
+                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
+                                      mode='KLT')
         
         # PLOTTING: Eigenvalues (eigval vs eigval number) vs Time
 
         dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
-
-        eigval = eigval[:,::-1]     #(?) Reverses the order of the eigenvalues, so that they descend rather than ascend.
         
         tmin = 0
         tmax = dt * eigval.shape[0]
-
         ymin=0
         ymax= tmax
 
-    
-        print eigval
-        print eigval.shape
-        vmax = np.average(np.abs(eigval))*10     # Maximum value that will be registered on the color bar.
+        eigval = np.abs(eigval)     # Takes absolute value of eigenvalues.
+        eigval = np.sort(eigval)    # Lists |eigval| in ascending order.
+        eigval = eigval[:,::-1]     # Reverses the order of |eigval|, so that they descend rather than ascend.
         
-        plt.imshow(eigval, extent = [0,eigval.shape[1],ymin,ymax], vmin=-1*vmax, vmax=vmax, aspect='auto', origin='lower')
+        eigval_n = np.abs(eigval_n) # Repeat for eigval_n.
+        eigval_n = np.sort(eigval_n)#
+        eigval_n = eigval_n[:,::-1] #  
+        
+        vmax = np.average(eigval)*10     # Maximum value that will be registered on the color bar.
+        vmax_n = np.average(eigval_n)*10 # Same, but for noise.
+        
+        
+        # Plotting & saving, for signal.
+        plt.imshow(eigval[:,:Nmax], extent = [0,Nmax,ymin,ymax], \
+                   vmin=-1*vmax, vmax=vmax, aspect='auto', origin='lower')
         plt.xlabel("Eigenvalue Number")
         plt.ylabel("Time (s)")
-        plt.title("Eigenvalues vs Time")
+        plt.title("Eigenvalues vs Time, for "+str(frequency)+" MHz")
         plt.colorbar()
 
         plt.savefig('eig_vs_time_'+outputsuffix+'_MHz.png')
+        plt.clf()
         
-        return eigval, tmax
+        
+        # Plotting & saving, for noise.
+        plt.imshow(eigval_n[:,:Nmax], extent = [0,Nmax,ymin,ymax], \
+                   vmin=-1*vmax_n, vmax=vmax_n, aspect='auto', origin='lower')
+        plt.xlabel("Eigenvalue Number")
+        plt.ylabel("Time (s)")
+        plt.title("Eigenvalues vs Time ("+str(frequency)+" MHz), for NOISE ONLY.")
+        plt.colorbar()
+
+        plt.savefig('eig_vs_time_'+outputsuffix+'_MHz_n.png')
+        plt.clf()
+        
+        return eigval, eigval_n, tmax
     else:
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
-        return    
-
+        return
+    
     
 
 def disperser(frequency,power,fmin,fmax,tmax,DM):
@@ -397,26 +431,100 @@ def addnoise(fftd,scale=1):
         
     Returns:
     --------
-    power_n : array
-        2D array of spectrum (log(abs(power))
-        vs frequency) as a function of time,
-        WITH noise applied.
     fftd_n : array
         2D array of _complex_ power vs frequency,
         as a function of time, WITH noise applied.
     noise : array
         2D array of _complex_ noise, added to fftd,
         should you feel like using it for some reason.
+    power_n : array
+        2D array of spectrum (log(abs(power))
+        vs frequency) as a function of time,
+        WITH noise applied.
     '''
 
-    noise_x = np.random.randn(fftd.shape[0],fftd.shape[1])    
-    noise_y = np.random.randn(fftd.shape[0],fftd.shape[1])
+    noise_x = np.random.randn(fftd.shape[0],fftd.shape[1])    # Real components of noise.
+    noise_y = np.random.randn(fftd.shape[0],fftd.shape[1])    # Imaginary components of noise.
 
     noise = scale*(noise_x + noise_y*1j)    # At the moment, the noise can be positive or negative;
                                             # as opposed to ranging from 0 to x. Is this okay?
+#    # Multiply the noise by a factor.
+#    Pnoise = noise.shape[1]           # (?) "Pnoise = Npts * 1", according to instructions.
+#                                      #     Is Npts simply the number of entries in a "power vs frequency" row?
+#    
+#    spec = np.ave(np.abs(fftd),axis=0)      # Time-averaged spectrum (Power vs. Frequency).
+#    Psig = np.sum(np.abs(spec)**2)
+#    print Pnoise, Psig
+#    noise = noise * np.sqrt(Psig/Pnoise)
     
+    # Generate the fftd+noise array.
     fftd_n = fftd + noise
     
     power_n = np.log(np.abs(fftd_n))
     
-    return power_n, fftd_n, noise
+    return fftd_n, noise, power_n
+
+def addnoise_KLT(d,eigval,step=1,scale=1):
+    '''
+    Takes array of (eigval. vs frequency)
+    vs time, then generates a similar array
+    using pure noise (with a standard 
+    deviation of 1*scale to it).
+
+    Parameters:
+    -----------
+    d : array
+        Signal array, after being reshaped
+        from folding.
+    eigval : array
+        2D array of eigenvalues vs eigenvalue
+        number, as a function of time.
+    step : int
+        Step size for generating eigval array.
+        A step size of 1 (default) will often be
+        far too slow, and can cause imshow to freeze.
+    scale : float
+        Multiplier for standard deviation of noise.
+        e.g. scale==2 will cause noise to have a 
+        standard deviation of 2.
+        
+    Returns:
+    --------
+    noise : array
+        2D array of _complex_ signal vs. time, from
+        noise alone. 
+    eigval_n : array
+        2D array of eigenvalues vs eigenvalue number
+        _from noise only_, as a function of time.
+    '''
+    noise_x = np.random.randn(d.shape[0],d.shape[1])    # Real components of noise.
+    noise_y = np.random.randn(d.shape[0],d.shape[1])    # Imaginary components of noise.
+
+    noise = scale*(noise_x + noise_y*1j)    # Noise can be + or -.
+    
+                # KLT THE DATA
+    Pnoise = noise.shape[1] 
+    Psig = np.zeros(d.shape[0])   # Will be filled.
+
+    acorfft_n = np.fft.ifft(noise * np.conj(noise), axis=0)   # Will be overwritten in a few lines.
+    
+    print acorfft_n.shape
+    print d.shape
+    print Psig.shape
+    # Altering the noise array:
+    for i in range(0,acorfft_n.shape[0]):
+        Psig[i] = np.sum(np.abs(d[i])**2)
+        noise[i] = noise[i] * np.sqrt(Psig[i]/Pnoise)
+    
+    # Generating eigval_n:
+    acorfft_n = np.fft.ifft(noise * np.conj(noise), axis=0)
+    acorfft_n = acorfft_n.real
+    eigval_n = np.zeros(acorfft_n.size/step).reshape(acorfft_n.shape[0]/step,acorfft_n.shape[1])
+    for i in range(0,acorfft_n.shape[0],step):
+        toeplitz_matrix_n = sla.toeplitz(acorfft_n[i])
+        eigval_n[i/step], dummy = np.linalg.eigh(toeplitz_matrix_n)  # Don't bother with eigenvectors.
+    
+    
+    return eigval_n
+
+
