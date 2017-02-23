@@ -31,7 +31,7 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         samples per second).
     timesamples : bool
         Returns the raw array if True.
-        Default: True
+        Default: False
     mode : str ('FFT' or 'KLT')
         Analyzes data using fast fourier transform or
         Karhunen-Loeve transform.
