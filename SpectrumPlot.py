@@ -36,7 +36,7 @@ def readradio(fname='radioline.bin',Nchannel=5000,frequency = 96.7*u.MHz, rate =
         Analyzes data using fast fourier transform or
         Karhunen-Loeve transform.
         Default: 'FFT'
-        
+       
     Returns:
     --------
     if mode=='FFT':
@@ -164,19 +164,16 @@ def loadcustom(frequency):
 #            custom[np.where(custom_index=='rate')[0][0]]    # Keep this here in case we want to add more values
                                                             # to the 'custom' files or call them separately.
 
-def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemode=1):
+def generate(frequency, Nchannel=5000, rate=3, preset=True):
     '''
-    Plots spectrum or eigenvalues versus time from a given data file, then
-    saves it.
+    Transforms input signal using FFT *and* KLT, then saves 
+    the resulting arrays. It can be called on elsewhere in
+    the code for convenience.
 
     Parameters:
     -----------
     frequency : float
         Frequency of sampled radio line, in MHz.
-    #spectrum_n : array
-    #    2D array of log of spectrum (log(abs(power)) vs
-    #    frequency) as a function of time, for noise.
-    #    Only relevant if noisemode==1.
     Nchannel : int
         Number of samples.
     rate : float
@@ -186,6 +183,67 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
         Toggles whether a preset is activated.
         Default: True
         (!) False is currently unsupported.
+        
+    Returns:
+    --------
+    None
+    '''
+    
+    if preset==True:
+        frequency,Nchannel,rate = loadcustom(frequency) # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
+    outputsuffix = str(frequency).replace(".","_")      # e.g. if freq = 96.5, then outputsuffix = '96_5'.
+
+        
+    # Generates FFT array:
+    spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
+                                  rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
+                                  mode='FFT')
+    print "Frequency = "+str(frequency)+" MHz: FFT Complete"
+    
+    # Generates KLT array, and makes it presentable:
+    eigval, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
+                                rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
+                                mode='KLT')
+    eigval = np.abs(eigval)     # Takes absolute value of eigenvalues.
+    eigval = np.sort(eigval)    # Lists |eigval| in ascending order.
+    eigval = eigval[:,::-1]     # Reverses the order of |eigval|, so that they descend rather than ascend.
+    print "Frequency = "+str(frequency)+" MHz: KLT Complete"
+    
+    
+    
+    # Saving FFT and KLT arrays
+    outfileFFT = "save_FFT_"+outputsuffix+".bin"
+    outfileKLT = "save_KLT_"+outputsuffix+".bin"
+    #outfileTIME = "save_time_"+outputsuffix+".bin"
+    
+    #print type(fftd)
+    #print type(eigval)
+    #print type(time)
+    
+    f1 = file(str(outfileFFT),"wb")                  # Saves the following into 'filename.bin'.
+    np.save(f1,fftd) 
+    f1.close()
+    
+    f2 = file(str(outfileKLT),"wb")
+    np.save(f2,eigval)
+    f2.close()
+    
+    #f3 = file(str(outfileTIME),"wb")
+    #np.save(f3,time2)
+    #f3.close()
+    
+    return
+
+
+def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemode=1):
+    '''
+    Plots spectrum or eigenvalues versus time from a given data file, then
+    saves it.
+
+    Parameters:
+    -----------
+    frequency : float
+        Frequency of sampled radio line, in MHz.
     mode : str ('FFT' or 'KLT')
         Analyzes data using fast fourier transform or
         Karhunen-Loeve transform.
@@ -210,9 +268,6 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
             2D array of log of spectrum (log(abs(power))
             vs frequency) as a function of time, for noise.
             Basically, just the log of fftd_n.
-        #fftd : array
-        #    2D array of spectrum (_complex_ power
-        #    vs frequency), as a function of time.
         f_min : float
             Minimum value for frequency
             in the 'spectrum'/'fftd' array.
@@ -232,27 +287,47 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
             Time elapsed for sampling the data.
     '''
 
+    # (!) Change these parameters.
     frequency_n = 1420.0
+    Nmax = 100       # Number of eigenvalues to be displayed on x-axis.
     
-    if preset==True:
-        frequency,Nchannel,rate = loadcustom(frequency) # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
+    frequency,Nchannel,rate = loadcustom(frequency) # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
     outputsuffix = str(frequency).replace(".","_")      # e.g. if freq = 96.5, then outputsuffix = '96_5'.
     outputsuffix_n =str(frequency_n).replace(".","_")      # Same as above, but for noise.
+    
+    
+    # LOADING all data:
+    outfileFFT = "save_FFT_"+outputsuffix+".bin"
+    outfileKLT = "save_KLT_"+outputsuffix+".bin"
 
+    f1 = file(str(outfileFFT),"rb")                 # Loads saved FFT array.
+    fftd = np.load(f1)
+    f1.close()
+
+    f2 = file(str(outfileKLT),"rb")                 # Loads saved KLT array.
+    eigval = np.load(f2)
+    f2.close()
+    
+    # LOADING all data for noise:
+    outfileFFT_n = "save_FFT_"+outputsuffix_n+".bin"
+    outfileKLT_n = "save_KLT_"+outputsuffix_n+".bin"
+
+    f3 = file(str(outfileFFT_n),"rb")                 # Loads saved FFT array for noise.
+    fftd_n = np.load(f3)
+    f3.close()
+
+    f4 = file(str(outfileKLT_n),"rb")                 # Loads saved KLT array for noise.
+    eigval_n = np.load(f4)
+    f4.close()
+
+    
     if noisemode==0:
         print "ERROR: Noisemode must be an integer larger than 0."
         return
-        
+    
     if mode=='fft' or mode=='FFT':
-        
-        # Reads data file:
-        spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
-                                      rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
-                                      mode='FFT')
-        # Generates noise array:
-        spec_n, freq, fftd_n, time = readradio(frequency = frequency_n*u.MHz, Nchannel=Nchannel, \
-                              rate=rate*u.MHz, fname = "radioline_"+outputsuffix_n+".bin",\
-                              mode='FFT')
+        freq = np.fft.fftfreq(Nchannel)*rate+frequency
+        freq = np.roll(freq, np.size(freq)/2)
         
         # PLOTTING: Spectrum (intensity vs frequency) vs Time
 
@@ -260,8 +335,8 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
 
         spectrum = np.log(np.abs(fftd))
         spectrum_n = np.log(np.abs(fftd_n))
-        fmin = freq[0].value
-        fmax = freq[-1].value
+        fmin = freq[0]
+        fmax = freq[-1]
         tmin = 0
         tmax = dt * spectrum.shape[0]
 
@@ -315,19 +390,8 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
         #return spectrum,fftd,fmin,fmax,tmax
         return spectrum,fmin,fmax,tmax
     
-    elif mode=='klt' or mode=='KLT':
-        # (!) Change these parameters.
-        Nmax = 100       # Number of eigenvalues to be displayed on x-axis.
+    elif mode=='klt' or mode=='KLT':        
         
-        # Reads data file:
-        eigval, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
-                                    rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
-                                    mode='KLT')
-        if noisemode!=1:
-            eigval_n, time_n = readradio(frequency = frequency_n*u.MHz, Nchannel=Nchannel, \
-                                        rate=rate*u.MHz, fname = "radioline_"+outputsuffix_n+".bin",\
-                                        mode='KLT')
-        print "eigval gen complete"
         # PLOTTING: Eigenvalues (eigval vs eigval number) vs Time
 
         dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
@@ -337,18 +401,17 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
         ymin=0
         ymax= tmax
 
-        eigval = np.abs(eigval)     # Takes absolute value of eigenvalues.
-        eigval = np.sort(eigval)    # Lists |eigval| in ascending order.
-        eigval = eigval[:,::-1]     # Reverses the order of |eigval|, so that they descend rather than ascend.
+        #eigval = np.abs(eigval)     # Takes absolute value of eigenvalues.
+        #eigval = np.sort(eigval)    # Lists |eigval| in ascending order.
+        #eigval = eigval[:,::-1]     # Reverses the order of |eigval|, so that they descend rather than ascend.
         vmax = np.average(eigval)*10     # Maximum value that will be registered on the color bar.
         
         if noisemode!=1:
-            eigval_n = np.abs(eigval_n)  # Repeat for eigval_n.
-            eigval_n = np.sort(eigval_n) #
-            eigval_n = eigval_n[:,::-1]  #  
+            #eigval_n = np.abs(eigval_n)  # Repeat for eigval_n.
+            #eigval_n = np.sort(eigval_n) #
+            #eigval_n = eigval_n[:,::-1]  #  
             vmax_n = np.average(eigval_n)*10 # Same as vmax, but for noise.
         
-        print "egg"
         # Plotting & saving, for signal.
         if noisemode==1 or noisemode==2:
             plt.imshow(eigval[:,:Nmax], extent = [0,Nmax,ymin,ymax], \
@@ -394,6 +457,7 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
             plt.xlabel("Eigenvalue Number")
             plt.ylabel("Eigenvalue")
             plt.title("Eigenvalues for "+str(frequency)+" MHz, at time=0")
+            plt.legend(loc='upper right')
             
             plt.savefig('eig_'+outputsuffix+'_MHz_zerotime')
             plt.clf()
@@ -407,8 +471,9 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
             plt.xlabel("Eigenvalue Number")
             plt.ylabel("Eigenvalue")
             plt.title("Eigenvalues for "+str(frequency)+" MHz, time-averaged")
+            plt.legend(loc='upper right')
             
-            plt.savefig('eig_'+outputsuffix+'_MHz_zerotime')
+            plt.savefig('eig_'+outputsuffix+'_MHz_timeaveraged')
             plt.clf()
         
         return eigval, eigval_n, tmax
@@ -416,6 +481,162 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
         print "ERROR : 'mode' must equal FFT' or 'KLT'."
         return
     
+
+def addnoise(frequency,mode,scale=1.20):
+    '''
+    Generates array of _complex_ power vs
+    frequency, then adds recorded noise with a
+    scale factor of 'scale' to it.
+
+    Parameters:
+    -----------
+    frequency : float
+        Frequency of sampled radio line, in MHz.
+    scale : float (default=1.20)
+        Multiplier for standard deviation of noise.
+        e.g. scale==2 will cause noise to have a 
+        standard deviation of 2.
+    mode : str ('FFT' or 'KLT')
+        Analyzes data using fast fourier transform or
+        Karhunen-Loeve transform.
+        (?) KLT is currently not properly supported.
+        
+        
+    Returns:
+    --------
+    spectrum_sum : array
+        2D array of log of spectrum (log(abs(power))
+        vs frequency) + scale*(log of noise spectrum),
+        as a function of time.
+    eigval_sum : array
+        2D array of (signal eigenvalues + noise
+        eigenvalues) vs eigenvalue
+        number, as a function of time.
+        (?) Is this correct?
+    '''
+    
+
+    frequency_n = 1420.0                   # Frequency of noise to be compared to signal.
+    frequency_n_added = 1420.000001        # Frequency of noise to be added directly to signal.
+    Nmax = 100                      # Number of eigenvalues to be displayed on x-axis.
+    
+    frequency,Nchannel,rate = loadcustom(frequency) # Radio freq. in MHz; No. of samples; sampling freq. in MHz.
+    outputsuffix = str(frequency).replace(".","_")               # e.g. if freq = 96.5, then outputsuffix = '96_5'.
+    outputsuffix_n =str(frequency_n).replace(".","_")                  # Same as above, but for noise.
+    outputsuffix_n_added =str(frequency_n_added).replace(".","_")      # Same as above, but for noise_added.
+    
+    
+    
+    # -------- LOADING ---------
+    # LOADING all data for signal:
+    outfileFFT = "save_FFT_"+outputsuffix+".bin"
+    outfileKLT = "save_KLT_"+outputsuffix+".bin"
+
+    f1 = file(str(outfileFFT),"rb")                 # Loads saved FFT array.
+    fftd = np.load(f1)
+    f1.close()
+
+    f2 = file(str(outfileKLT),"rb")                 # Loads saved KLT array.
+    eigval = np.load(f2)
+    f2.close()
+    
+    # LOADING all data for noise:
+    outfileFFT_n = "save_FFT_"+outputsuffix_n+".bin"
+    outfileKLT_n = "save_KLT_"+outputsuffix_n+".bin"
+
+    f3 = file(str(outfileFFT_n),"rb")                 # Loads saved FFT array for noise.
+    fftd_n = np.load(f3)
+    f3.close()
+
+    f4 = file(str(outfileKLT_n),"rb")                 # Loads saved KLT array for noise.
+    eigval_n = np.load(f4)
+    f4.close()
+    
+    # LOADING all data for noise_added:
+    outfileFFT_n_added = "save_FFT_"+outputsuffix_n_added+".bin"
+    outfileKLT_n_added = "save_KLT_"+outputsuffix_n_added+".bin"
+
+    f3 = file(str(outfileFFT_n_added),"rb")                 # Loads saved FFT array for noise_added.
+    fftd_n_added = np.load(f3)
+    f3.close()
+
+    f4 = file(str(outfileKLT_n_added),"rb")                 # Loads saved KLT array for noise_added.
+    eigval_n_added = np.load(f4)
+    f4.close()
+    # ------- LOADING COMPLETE -------
+    
+    
+    # Loading is done, and we have fftd and eigval arrays for signal, noise (compared), and noise (added).
+    
+    
+    # ADDING NOISE:
+    spectrum = np.log(np.abs(fftd))
+    spectrum_n = np.log(np.abs(fftd_n))
+    spectrum_n_added = np.log(np.abs(fftd_n))
+    
+    spectrum_n = (scale+1)*spectrum_n          # This is so that we won't always have Psig > Pnoise when comparing.
+    spectrum_n_added = scale*spectrum_n_added
+    eigval_n_added = scale*eigval_n_added
+    
+    
+    FFTnormalizingmaximum = np.max(spectrum)
+    KLTnormalizingmaximum = np.max(eigval)
+    
+    
+    spectrum_sum = spectrum + spectrum_n_added # This is (Spectrum + Scale*Noise). We're focusing on this.
+    eigval_sum = eigval + eigval_n_added       # Same as above, but for eigval. (?) Is this correct, though?
+
+    spectrum_sum = spectrum_sum / np.max(spectrum_sum) * FFTnormalizingmaximum
+    eigval_sum = eigval_sum / np.max(eigval_sum) * KLTnormalizingmaximum
+    
+    # PLOTTING:
+    dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
+    freq = np.fft.fftfreq(Nchannel)*rate+frequency
+    freq = np.roll(freq, np.size(freq)/2)
+
+    fmin = freq[0]
+    fmax = freq[-1]
+    tmin = 0
+    tmax = dt * spectrum.shape[0]
+
+    xmin=fmin
+    xmax=fmax
+    ymin=0
+    ymax= tmax
+    
+    if mode=='FFT' or mode=='fft':
+        plt.imshow(spectrum_sum, extent = [xmin,xmax,ymin,ymax], aspect='auto', \
+                   vmin = np.min(spectrum_sum), vmax = np.max(spectrum_sum), origin='lower')
+        plt.colorbar()
+        plt.xlabel("Frequency (MHz)")
+        plt.ylabel("Time (s)")
+        plt.title("Spectrum vs Time ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
+
+#        plt.savefig('spec_vs_time_'+outputsuffix+'_MHz_signalplusnoise.png')
+#        plt.clf()
+
+        # COMPARE: Is there a signal?
+        #print "Power sum      for " + str(frequency)+' MHz: ' + str(np.sum(spectrum_sum**2))
+        #print "Noisepower sum for " + str(frequency)+' MHz: ' + str(np.sum(spectrum_n**2))
+        #print "Sig:Noi Ratio  for " + str(frequency)+' MHz: ' + str(np.sum(spectrum_sum**2) / np.sum(spectrum_n**2))
+        #print "\n"+'Is there signal? -> '+str(np.sum(spectrum_sum**2) / np.sum(spectrum_n**2) > 1.00)
+        # (!) We're doing it by eye for now. Uncomment these and edit them once we move on to a computational method.
+
+    elif mode=='KLT' or mode=='klt':
+        vmax = np.average(eigval)*10     # Maximum value that will be registered on the color bar.
+        
+        plt.imshow(eigval_sum[:,:Nmax], extent = [0,Nmax,ymin,ymax], \
+                   vmin=0, vmax=vmax, aspect='auto', origin='lower')
+        plt.xlabel("Eigenvalue Number")
+        plt.ylabel("Time (s)")
+        plt.title("Eigenvalues vs Time ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
+        plt.colorbar()
+
+#        plt.savefig('eig_vs_time_'+outputsuffix+'_MHz_signalplusnoise.png')
+#        plt.clf()      
+
+    
+    return spectrum_sum, eigval_sum
     
     
 def disperser(frequency,spectrum,fmin,fmax,tmax,DM):
@@ -528,7 +749,7 @@ def run(FFTmode=0,KLTmode=0):
 
     '''
 
-    frequencies = np.array([91.7,102.3,102.9,853.610,859.000,863.500,866.000])
+    frequencies = np.array([91.7,102.3,102.9,850.0,853.610,859.000,863.500,866.000])
     nsamples = frequencies.shape[0]
 
     if FFTmode!=0:
@@ -540,4 +761,34 @@ def run(FFTmode=0,KLTmode=0):
         for i in range(0,nsamples):
             eigval,eigval_n,tmax = specplot(frequencies[i],noisemode=KLTmode,mode='KLT')
             print "Frequency = "+str(frequencies[i])+" MHz: KLT Complete"
+
+def runsingle(frequency):
+    '''
+    Generates plots of KLTs and FFTs for a single
+    frequency. Does, like, everything.
+    
+    Parameters:
+    -----------
+    frequency : float
+        Frequency of sample (in MHz) that we want
+        to run all available code for.
+        
+    
+    Returns:
+    --------
+    None
+
+    '''
+    FFTmodes = 3    # (!) Maximum number for FFT's noisemode in specplot().
+    KLTmodes = 5    # (!) Maximum number for KLT's noisemode in specplot().
+    
+    for i in range(2,FFTmodes+1):
+        spectrum,fmin,fmax,tmax = specplot(frequency,noisemode=i,mode='FFT')
+        print "Frequency = "+str(frequencies[i])+" MHz: Mode "+str(i)+" FFT Complete"
+    
+    for i in range(2,KLTmodes+1):
+        eigval,eigval_n,tmax = specplot(frequency,noisemode=i,mode='KLT')
+        print "Frequency = "+str(frequencies[i])+" MHz: Mode "+str(i)+" KLT Complete"
+            
+    
 
