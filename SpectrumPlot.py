@@ -195,7 +195,7 @@ def generate(frequency, Nchannel=5000, rate=3, preset=True):
 
         
     # Generates FFT array:
-    spec, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
+    fftd_ave, freq, fftd, time = readradio(frequency = frequency*u.MHz, Nchannel=Nchannel, \
                                   rate=rate*u.MHz, fname = "radioline_"+outputsuffix+".bin",\
                                   mode='FFT')
     print "Frequency = "+str(frequency)+" MHz: FFT Complete"
@@ -214,11 +214,7 @@ def generate(frequency, Nchannel=5000, rate=3, preset=True):
     # Saving FFT and KLT arrays
     outfileFFT = "save_FFT_"+outputsuffix+".bin"
     outfileKLT = "save_KLT_"+outputsuffix+".bin"
-    #outfileTIME = "save_time_"+outputsuffix+".bin"
-    
-    #print type(fftd)
-    #print type(eigval)
-    #print type(time)
+    outfileFFTAVE = "save_FFTAVE_"+outputsuffix+".bin"
     
     f1 = file(str(outfileFFT),"wb")                  # Saves the following into 'filename.bin'.
     np.save(f1,fftd) 
@@ -228,12 +224,11 @@ def generate(frequency, Nchannel=5000, rate=3, preset=True):
     np.save(f2,eigval)
     f2.close()
     
-    #f3 = file(str(outfileTIME),"wb")
-    #np.save(f3,time2)
-    #f3.close()
+    f3 = file(str(outfileFFTAVE),"wb")
+    np.save(f3,fftd_ave)
+    f3.close()
     
     return
-
 
 def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemode=1):
     '''
@@ -482,7 +477,7 @@ def specplot(frequency, Nchannel=5000, rate=3, preset=True, mode='FFT', noisemod
         return
     
 
-def addnoiseFFT(frequency,scale=1.20):
+def addnoiseFFT(frequency,scale=1.20,avemode=False):
     '''
     Generates array of _complex_ power vs
     frequency, then adds recorded noise with a
@@ -498,6 +493,12 @@ def addnoiseFFT(frequency,scale=1.20):
         result will be.
         Setting scale > 1.20 may cause some
         weaker signals to not be detected.
+    avemode : bool (default: False)
+        Toggles whether to plot the time-averages
+        of the spectrum instead. May be better
+        or worse at detecting signal.
+        False - recommend scale=1.20
+        True  - recommend scale=100.0
         
         
     Returns:
@@ -526,39 +527,39 @@ def addnoiseFFT(frequency,scale=1.20):
     # -------- LOADING ---------
     # LOADING all data for signal:
     outfileFFT = "save_FFT_"+outputsuffix+".bin"
-    #outfileKLT = "save_KLT_"+outputsuffix+".bin"
+    outfileFFTAVE = "save_FFTAVE_"+outputsuffix+".bin"
 
     f1 = file(str(outfileFFT),"rb")                 # Loads saved FFT array.
     fftd = np.load(f1)
     f1.close()
 
-    #f2 = file(str(outfileKLT),"rb")                 # Loads saved KLT array.
-    #eigval = np.load(f2)
-    #f2.close()
+    f2 = file(str(outfileFFTAVE),"rb")                 # Loads saved fftd_ave array.
+    fftd_ave = np.load(f2)
+    f2.close()
     
     # LOADING all data for noise:
     outfileFFT_n = "save_FFT_"+outputsuffix_n+".bin"
-    #outfileKLT_n = "save_KLT_"+outputsuffix_n+".bin"
+    outfileFFTAVE_n = "save_FFTAVE_"+outputsuffix_n+".bin"
 
     f3 = file(str(outfileFFT_n),"rb")                 # Loads saved FFT array for noise.
     fftd_n = np.load(f3)
     f3.close()
 
-    #f4 = file(str(outfileKLT_n),"rb")                 # Loads saved KLT array for noise.
-    #eigval_n = np.load(f4)
-    #f4.close()
+    f4 = file(str(outfileFFTAVE_n),"rb")                 # Loads saved fftd_ave array for noise.
+    fftd_ave_n = np.load(f4)
+    f4.close()
     
     # LOADING all data for noise_added:
     outfileFFT_n_added = "save_FFT_"+outputsuffix_n_added+".bin"
-    #outfileKLT_n_added = "save_KLT_"+outputsuffix_n_added+".bin"
+    outfileFFTAVE_n_added = "save_FFTAVE_"+outputsuffix_n_added+".bin"
 
     f3 = file(str(outfileFFT_n_added),"rb")                 # Loads saved FFT array for noise_added.
     fftd_n_added = np.load(f3)
     f3.close()
 
-    #f4 = file(str(outfileKLT_n_added),"rb")                 # Loads saved KLT array for noise_added.
-    #eigval_n_added = np.load(f4)
-    #f4.close()
+    f4 = file(str(outfileFFTAVE_n_added),"rb")                 # Loads saved fftd_ave array for noise_added.
+    fftd_ave_n_added = np.load(f4)
+    f4.close()
     # ------- LOADING COMPLETE -------
     
     
@@ -566,19 +567,28 @@ def addnoiseFFT(frequency,scale=1.20):
     
     
     # ADDING NOISE:
-    fftd_n = (scale+1)*fftd_n          
-    fftd_n_added = scale*fftd_n_added
-    
     spectrum = np.log(np.abs(fftd))
     spectrum_sum = np.log(np.abs(fftd + scale*fftd_n_added))
-    spectrum_n = np.log(np.abs((scale+1)*fftd_n))  # This is so that we won't always have Psig > Pnoise when comparing.
-    
+    spectrum_n = np.log(np.abs((scale+1)*fftd_n))  # This is so that we won't always have 
+                                                   #     Psig > Pnoise when comparing.
+
     FFTnormalizingmaximum = np.max(spectrum)
 
     spectrum_sum = spectrum_sum / np.max(spectrum_sum) * FFTnormalizingmaximum
     
+    # ADDING NOISE, for TIME-AVERAGED spectrum:    
+    spectrum_ave = np.log(np.abs(fftd_ave))
+    spectrum_ave_sum = np.log(np.abs(fftd_ave + scale*fftd_ave_n_added))
+    spectrum_ave_n = np.log(np.abs((scale+1)*fftd_ave_n))  
     
-    # PLOTTING:
+    currentmaximum = np.max(spectrum_ave_sum)
+    FFTnormalizingmaximum_ave = np.max(spectrum_ave)
+
+    spectrum_ave_sum = spectrum_ave_sum / np.max(currentmaximum) * FFTnormalizingmaximum_ave
+    spectrum_ave_n   = spectrum_ave_n   / np.max(currentmaximum) * FFTnormalizingmaximum_ave
+    
+    
+    # PLOTTING: Waterfall Plot
     dt = (Nchannel/(rate*1e6)) # Size of time step, in seconds.
     freq = np.fft.fftfreq(Nchannel)*rate+frequency
     freq = np.roll(freq, np.size(freq)/2)
@@ -593,18 +603,35 @@ def addnoiseFFT(frequency,scale=1.20):
     ymin=0
     ymax= tmax
     
+    if avemode==False:
+        plt.imshow(spectrum_sum, extent = [xmin,xmax,ymin,ymax], aspect='auto', \
+                   vmin = np.min(spectrum_sum), vmax = np.max(spectrum_sum), origin='lower')
+        plt.colorbar()
+        plt.xlabel("Frequency (MHz)")
+        plt.ylabel("Time (s)")
+        plt.title("Spectrum vs Time ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
+
+
+        plt.savefig('noisy_spec_vs_time_'+outputsuffix+'_MHz.png')
+        plt.clf()
     
-    plt.imshow(spectrum_sum, extent = [xmin,xmax,ymin,ymax], aspect='auto', \
-               vmin = np.min(spectrum_sum), vmax = np.max(spectrum_sum), origin='lower')
-    plt.colorbar()
-    plt.xlabel("Frequency (MHz)")
-    plt.ylabel("Time (s)")
-    plt.title("Spectrum vs Time ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
+    # Plotting: Time-Averaged Spectrum
+    elif avemode==True:
+        plt.plot(freq,spectrum_ave_sum,label="Signal+"+str(scale)+"*Noise")
+        plt.plot(freq,spectrum_ave_n,"r:",label=str(scale+1)+"*Noise")
+        plt.xlabel("Frequency (MHz)")
+        plt.ylabel("Power")
+        plt.title("Time-Averaged Spectrum ("+str(frequency)+" MHz), for (Signal+"+str(scale+1)+"*Noise)")
+        
+        plt.legend(loc='upper right')
 
-
-    plt.savefig('noisy_spec_vs_time_'+outputsuffix+'_MHz.png')
-    plt.clf()
-
+        plt.savefig('noisy_spec_timeaveraged'+outputsuffix+'_MHz.png')
+        plt.clf()
+    else:
+        print "Why on earth is 'avemode' neither True nor False?"
+        return
+    
+    
     # COMPARE: Is there a signal?
     #print "Power sum      for " + str(frequency)+' MHz: ' + str(np.sum(spectrum_sum**2))
     #print "Noisepower sum for " + str(frequency)+' MHz: ' + str(np.sum(spectrum_n**2))
@@ -615,7 +642,7 @@ def addnoiseFFT(frequency,scale=1.20):
     
     return spectrum_sum
 
-def addnoiseKLT(frequency,scale=2.5):
+def addnoiseKLT(frequency,scale=2.5,avemode=False):
     '''
     Generates array of _complex_ power vs
     frequency, then adds recorded noise with a
@@ -631,6 +658,12 @@ def addnoiseKLT(frequency,scale=2.5):
         result will be.
         Setting scale > 2.5 may cause weaker
         signals to not be detected.
+    avemode : bool (default: False)
+        Toggles whether to plot the time-averages
+        of the eigenvalues instead. May be better
+        or worse at detecting signal.
+        False - Recommend scale=2.5
+        True  - Recommend scale=2.7
         
         
     Returns:
@@ -658,10 +691,15 @@ def addnoiseKLT(frequency,scale=2.5):
     # -------- LOADING ---------
     # LOADING all data for signal:
     outfileFFT = "save_FFT_"+outputsuffix+".bin"
+    outfileKLT_n = "save_KLT_"+outputsuffix_n+".bin"
     
     f1 = file(str(outfileFFT),"rb")                 # Loads saved FFT array.
     fftd = np.load(f1)
     f1.close()
+    
+#    f2 = file(str(outfileKLT_n),"rb")               # Loads saved KLT array for 1420.0 MHz.
+#    eigval_n = np.load(f2)
+#    f2.close()
     # ------- LOADING COMPLETE -------
     
     
@@ -673,24 +711,32 @@ def addnoiseKLT(frequency,scale=2.5):
     step = 10        # (!) Change this manually if you want to run it faster, at the cost of imshow resolution.
                      #        Default: 1. 
     
-    d1 = np.fromfile(fname,dtype=np.uint8)
+    d1 = np.fromfile(fname,dtype=np.uint8)           # Data from the inputted frequency.    
     d1 = d1.astype(np.float)
     d1 -= 127
     d1 = d1[0::2]+d1[1::2]*1j
     d1.shape = (d1.size/Nchannel,Nchannel) # Navgs by Nchannels
     
-    d2 = np.fromfile(fname_n_added,dtype=np.uint8)
+    d2 = np.fromfile(fname_n,dtype=np.uint8)   # Data from 1420.0 MHz.
     d2 = d2.astype(np.float)
     d2 -= 127
     d2 = d2[0::2]+d2[1::2]*1j
     d2.shape = (d2.size/Nchannel,Nchannel) # Navgs by Nchannels
+    
+    d3 = np.fromfile(fname_n_added,dtype=np.uint8)   # Data from 1420.000001 MHz.
+    d3 = d3.astype(np.float)
+    d3 -= 127
+    d3 = d3[0::2]+d3[1::2]*1j
+    d3.shape = (d3.size/Nchannel,Nchannel) # Navgs by Nchannels
 
     # Let's reshape the signal into  
     d1.shape = (d1.shape[0]*folds, d1.shape[1]/folds)
     d2.shape = (d2.shape[0]*folds, d2.shape[1]/folds)
+    d3.shape = (d3.shape[0]*folds, d3.shape[1]/folds)
     
     # Add noise.
-    d = d1 + scale*d2
+    d = d1 + scale*d3
+    d2 = (scale+0)*d2
 
     # KL Transform: SIGNAL+Scale*NOISE
     ffty = np.fft.fft(d, axis=0)
@@ -698,10 +744,19 @@ def addnoiseKLT(frequency,scale=2.5):
     acorfft = acorfft.real
     eigval = np.zeros(acorfft.size/step).reshape(acorfft.shape[0]/step,acorfft.shape[1]) 
              # Creates empty array of same size as acorfft, but with shape altered by number of stats.
-        
+    if avemode==True:
+        ffty_n = np.fft.fft(d2, axis=0)
+        acorfft_n = np.fft.ifft(ffty_n * np.conj(ffty_n), axis=0)
+        acorfft_n = acorfft_n.real
+        eigval_n = np.zeros(acorfft_n.size/step).reshape(acorfft_n.shape[0]/step,acorfft_n.shape[1]) 
+                 # Creates empty array of same size as acorfft, but with shape altered by number of stats.
+
     for i in range(0,acorfft.shape[0],step):
         toeplitz_matrix = sla.toeplitz(acorfft[i])
         eigval[i/step], dummy = np.linalg.eigh(toeplitz_matrix)  # Don't bother with eigenvectors.
+        if avemode==True:
+            toeplitz_matrix_n = sla.toeplitz(acorfft_n[i])
+            eigval_n[i/step], dummy = np.linalg.eigh(toeplitz_matrix_n)  # Don't bother with eigenvectors.
 
     time = (np.arange(d.size/Nchannel)/rate)
 
@@ -709,6 +764,11 @@ def addnoiseKLT(frequency,scale=2.5):
     eigval = np.abs(eigval)     # Takes absolute value of eigenvalues.
     eigval = np.sort(eigval)    # Lists |eigval| in ascending order.
     eigval = eigval[:,::-1]     # Reverses the order of |eigval|, so that they descend rather than ascend.
+    if avemode==True:
+        eigval_n = np.abs(eigval_n)     # Takes absolute value of eigenvalues.
+        eigval_n = np.sort(eigval_n)    # Lists |eigval_n| in ascending order.
+        eigval_n = eigval_n[:,::-1]     # Reverses the order of |eigval_n|, so that they descend rather than ascend.
+        
     print "Frequency = "+str(frequency)+" MHz + NOISE: KLT Complete"
     
     # ~~~   ADDING NOISE complete.   ~~~
@@ -733,15 +793,34 @@ def addnoiseKLT(frequency,scale=2.5):
     eigval_sum = eigval
     vmax = np.average(eigval_sum)*10     # Maximum value that will be registered on the color bar.
 
-    plt.imshow(eigval_sum[:,:Nmax], extent = [0,Nmax,ymin,ymax], \
-               vmin=0, vmax=vmax, aspect='auto', origin='lower')
-    plt.xlabel("Eigenvalue Number")
-    plt.ylabel("Time (s)")
-    plt.title("Eigenvalues vs Time ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
-    plt.colorbar()
+    if avemode==False:
+        plt.imshow(eigval_sum[:,:Nmax], extent = [0,Nmax,ymin,ymax], \
+                   vmin=0, vmax=vmax, aspect='auto', origin='lower')
+        plt.xlabel("Eigenvalue Number")
+        plt.ylabel("Time (s)")
+        plt.title("Eigenvalues vs Time ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
+        plt.colorbar()
 
-    plt.savefig('noisy_eig_vs_time_'+outputsuffix+'_MHz.png')
-    plt.clf()      
+        plt.savefig('noisy_eig_vs_time_'+outputsuffix+'_MHz.png')
+        plt.clf() 
+    
+    # PLOTTING: Time-Averaged Eigenvalues
+    elif avemode==True:
+        plt.plot(np.average(eigval_sum,axis=0)[:Nmax],color='b',label="Signal+"+str(scale)+"*Noise")
+        plt.plot(np.average(eigval_n,axis=0)[:Nmax],color='r',label=str(scale)+"*Noise")
+        plt.ylim(0,vmax)
+        plt.xlim(0,Nmax)
+        plt.xlabel("Eigenvalue Number")
+        plt.ylabel("Eigenvalue")
+        plt.title("Time-Averaged Eigenvalues ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise")
+        plt.legend(loc='upper right')
+
+        plt.savefig('noisy_eig_vs_time_timeaveraged'+outputsuffix+'_MHz.png')
+        plt.clf()
+    else:
+        print "Why is 'avemode' neither True nor False?"
+        return
+
 
     return eigval_sum
     
