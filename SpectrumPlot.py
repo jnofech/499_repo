@@ -585,9 +585,9 @@ def addnoiseFFT(frequency,scale=1.20,avemode=False):
     currentmaximum = np.max(spectrum_ave_sum)
     FFTnormalizingmaximum_ave = np.max(spectrum_ave)
 
-    spectrum_ave_sum = spectrum_ave_sum / np.max(currentmaximum) * FFTnormalizingmaximum_ave
-    spectrum_ave_n_added = spectrum_ave_n_added / np.max(currentmaximum) * FFTnormalizingmaximum_ave
-    spectrum_ave_n   = spectrum_ave_n   / np.max(currentmaximum) * FFTnormalizingmaximum_ave
+#    spectrum_ave_sum = spectrum_ave_sum / np.max(currentmaximum) * FFTnormalizingmaximum_ave
+#    spectrum_ave_n_added = spectrum_ave_n_added / np.max(currentmaximum) * FFTnormalizingmaximum_ave
+#    spectrum_ave_n   = spectrum_ave_n   / np.max(currentmaximum) * FFTnormalizingmaximum_ave
     
     
     # PLOTTING: Waterfall Plot
@@ -622,14 +622,15 @@ def addnoiseFFT(frequency,scale=1.20,avemode=False):
 #        plt.plot(freq,spectrum_ave_sum,label="Signal+"+str(scale)+"*Noise")
 #        plt.plot(freq,spectrum_ave_n,"r:",label=str(scale+1)+"*Noise")
         axes = plt.gca()
+
         plt.plot(freq,(spectrum_ave_sum - spectrum_ave_n),\
-                 label="($P_{sig}$+"+str(scale)+"*$P_{noise}'$-"+str(scale+1)\
-                 +"*$P_{noise}$) / ("+str(scale+1)+"*$P_{noise}$)")
+                 label="Signal+"+str(scale)+"*Noise'-"+str(scale+1)\
+                 +"Noise")
         plt.plot(freq,(spectrum_ave_n_added - spectrum_ave_n),\
-                 "r:",label="("+str(scale+1)+"*$P_{noise}'$ - "+str(scale+1)\
-                 +"*$P_{noise}$) / ("+str(scale+1)+"*$P_{noise}$)")
+                 "r:",label=str(scale+1)+"*Noise' - "+str(scale+1)\
+                 +"*Noise")
         axes.set_ylim([-1*np.min(spectrum_ave_sum)/np.max(spectrum_ave_n),\
-                       np.max(spectrum_ave_sum)/np.max(spectrum_ave_n)])
+                       2*np.max(spectrum_ave_sum)/np.max(spectrum_ave_n)])
         plt.xlabel("Frequency (MHz)")
         plt.ylabel("Power")
         plt.title("Time-Averaged Spectrum ("+str(frequency)+" MHz), for (Signal+"+str(scale)+"*Noise)")
@@ -883,7 +884,7 @@ def disperser(frequency,spectrum,fmin,fmax,tmax,DM):
     frange = np.linspace(fmin,fmax,spectrum.shape[1])    # Array containing the range of frequencies.
     tstep = tmax / spectrum.shape[0]                     # Time per "step" in array, in seconds
     
-    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frange*1e6)**2) * DM * 3.086e16
+    tau = q_e**2 / (2 * np.pi * c_l * m_e * (frange*1e6)**2) * DM * 3.086e18
                                                                      # Time delayed by the dispersion measure DM
     # tau = np.zeros(spectrum.shape[1]) + np.random.rand(spectrum.shape[1])*0.5   # Testing the code for larger 'tau'.
     
@@ -912,7 +913,7 @@ def disperser(frequency,spectrum,fmin,fmax,tmax,DM):
     plt.imshow(spectrum, extent = [xmin,xmax,ymin,ymax], aspect='auto', origin='lower')
     plt.xlabel("Frequency (MHz)")
     plt.ylabel("Time (s)")
-    plt.title("Spectrum vs Time")
+    plt.title("Spectrum vs Time for "+str(frequency)+" MHz, with DM="+str(DM))
 
     plt.savefig('spec_vs_time_'+outputsuffix+'_MHz_DM_is_'+str(DM)+'.png')
     
